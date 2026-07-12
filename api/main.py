@@ -5,7 +5,7 @@ Run: uvicorn api.main:app --reload
 from fastapi import FastAPI
 
 from api.middleware import rate_limit_middleware
-from api.routers import auth
+from api.routers import auth, keys, scope_probe
 
 app = FastAPI(
     title="Perzforge",
@@ -24,4 +24,6 @@ async def healthz():
 
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(keys.router, prefix="/api/v1")
+app.include_router(scope_probe.router, prefix="/api/v1")
 # app.include_router(jobs.router, prefix="/api/v1")

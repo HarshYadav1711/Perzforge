@@ -11,7 +11,7 @@ import api.database as database
 from api.config import settings
 from api.database import Base, get_db
 from api.main import app
-from api.models import RefreshToken, User, UserRole
+from api.models import ApiKey, RefreshToken, User, UserRole
 from api.security import hash_password
 
 
@@ -31,6 +31,7 @@ async def configure_test_database() -> AsyncGenerator[None, None]:
 @pytest.fixture(autouse=True)
 async def clean_auth_tables() -> AsyncGenerator[None, None]:
     async with database.SessionLocal() as session:
+        await session.execute(delete(ApiKey))
         await session.execute(delete(RefreshToken))
         await session.execute(delete(User))
         await session.commit()
@@ -66,6 +67,21 @@ async def test_user() -> User:
 
 
 @pytest.fixture
+async def other_user() -> User:
+    async with database.SessionLocal() as session:
+        user = User(
+            email="other@example.com",
+            password_hash=hash_password("other-password-12"),
+            role=UserRole.user,
+            must_change_password=False,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
+@pytest.fixture
 async def admin_user() -> User:
     async with database.SessionLocal() as session:
         user = User(
@@ -80,6 +96,10 @@ async def admin_user() -> User:
         return user
 
 
+def auth_header(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 async def login(client: AsyncClient, email: str, password: str) -> dict:
     response = await client.post(
         "/api/v1/auth/login",
@@ -87,3 +107,24 @@ async def login(client: AsyncClient, email: str, password: str) -> dict:
     )
     assert response.status_code == 200
     return response.json()
+
+
+async def create_api_key(
+    client: AsyncClient,
+    access_token: str,
+    *,
+    name: str,
+    scopes: list[str],
+    expires_at: str | None = None,
+) -> str:
+    payload: dict = {"name": name, "scopes": scopes}
+    if expires_at is not None:
+        payload["expires_at"] = expires_at
+
+    response = await client.post(
+        "/api/v1/keys",
+        headers=auth_header(access_token),
+        json=payload,
+    )
+    assert response.status_code == 201
+    return response.json()["store_this_now"]

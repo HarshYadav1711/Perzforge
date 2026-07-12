@@ -59,3 +59,16 @@ def hash_token(token: str) -> str:
 
 def refresh_token_expires_at() -> datetime:
     return datetime.now(UTC) + timedelta(days=settings.jwt_refresh_ttl_days)
+
+
+API_KEY_PREFIX = "pzf_"
+
+
+def generate_api_key() -> tuple[str, str, str]:
+    """Return (plaintext, sha256_hash, display_prefix)."""
+    plaintext = f"{API_KEY_PREFIX}{secrets.token_urlsafe(32)}"
+    return plaintext, hash_token(plaintext), plaintext[:8]
+
+
+def is_api_key_token(token: str) -> bool:
+    return token.startswith(API_KEY_PREFIX)
