@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.uv-cache/
+*.egg-info/
+dist/
+.mypy_cache/
+minio-data/
+postgres-data/

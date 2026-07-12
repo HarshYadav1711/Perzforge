@@ -1,0 +1,31 @@
+---
+description: Perzforge pinned project context — read tasks/00-PROJECT-CONTEXT.md before every task; do not improvise architecture or expand scope
+alwaysApply: true
+---
+
+# Perzforge — Pinned Project Context
+
+**Read first, every session:** `tasks/00-PROJECT-CONTEXT.md`
+
+That file is the master context prompt. Treat it as binding alongside `AGENTS.md`. If anything in this rule conflicts with it, the pinned file wins.
+
+## Source of truth (frozen — do not redesign)
+
+1. `tasks/00-PROJECT-CONTEXT.md` — working agreement, constraints, scope discipline
+2. `docs/PRD.md` — user stories and acceptance criteria
+3. `docs/ARCHITECTURE.md` — components, data model, API, security
+4. `AGENTS.md` — non-negotiable implementation rules
+
+## Stay on track
+
+- Implement **exactly one story** per `tasks/*.md` file. Out-of-scope items stay out of scope.
+- **Story-scoped diffs only** — no drive-by refactors, stack swaps, or "while we're here" changes.
+- **Stack is decided** (FastAPI, PostgreSQL+asyncpg, Redis, Docker SDK, MinIO, MLflow, Ollama, Incus, Next.js). Propose alternatives only if something is broken; stop for human sign-off.
+- **Zero-cost, maintained OSS only** — no SaaS dependencies, no deprecated libs (Pydantic v2, SQLAlchemy 2.x async, PyJWT, argon2-cffi, httpx in async code).
+- PRD/ARCHITECTURE silent on a detail → simplest secure option + note in summary "Decisions". PRD vs ARCHITECTURE conflict → **stop and ask**.
+
+## Workflow per story
+
+1. Read `tasks/00-PROJECT-CONTEXT.md`, then the story task file, then relevant PRD + ARCHITECTURE sections.
+2. Write tests from acceptance criteria first; implement until green.
+3. End summaries with: files changed, decisions made, human-review flag if auth/tokens/quotas/container-execution touched.
