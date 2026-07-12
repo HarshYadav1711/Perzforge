@@ -1,8 +1,10 @@
 """Shared pytest fixtures for API integration tests."""
 from collections.abc import AsyncGenerator
 
+import fakeredis.aioredis
 import pytest
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -11,7 +13,8 @@ import api.database as database
 from api.config import settings
 from api.database import Base, get_db
 from api.main import app
-from api.models import ApiKey, RefreshToken, User, UserRole
+from api.models import ApiKey, Job, RefreshToken, User, UserRole
+from api.queue import get_redis
 from api.security import hash_password
 
 
@@ -28,9 +31,17 @@ async def configure_test_database() -> AsyncGenerator[None, None]:
     await test_engine.dispose()
 
 
+@pytest.fixture
+async def fake_redis() -> AsyncGenerator[Redis, None]:
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    yield redis
+    await redis.aclose()
+
+
 @pytest.fixture(autouse=True)
 async def clean_auth_tables() -> AsyncGenerator[None, None]:
     async with database.SessionLocal() as session:
+        await session.execute(delete(Job))
         await session.execute(delete(ApiKey))
         await session.execute(delete(RefreshToken))
         await session.execute(delete(User))
@@ -39,12 +50,16 @@ async def clean_auth_tables() -> AsyncGenerator[None, None]:
 
 
 @pytest.fixture
-async def client() -> AsyncGenerator[AsyncClient, None]:
+async def client(fake_redis: Redis) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with database.SessionLocal() as session:
             yield session
 
+    async def override_get_redis() -> AsyncGenerator[Redis, None]:
+        yield fake_redis
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_redis] = override_get_redis
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as test_client:
         yield test_client

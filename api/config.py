@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     jwt_access_ttl_minutes: int = 15
     jwt_refresh_ttl_days: int = 7
     environment: str = "dev"
+    allowed_image_prefixes: str = "python:,pytorch/,tensorflow/,nvidia/cuda"
+    max_concurrent_jobs_per_user: int = 2
+    job_queue_key: str = "perzforge:jobs:queue"
+
+    def image_prefixes(self) -> tuple[str, ...]:
+        return tuple(prefix.strip() for prefix in self.allowed_image_prefixes.split(",") if prefix.strip())
 
 
 settings = Settings()
