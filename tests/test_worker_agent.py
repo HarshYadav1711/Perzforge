@@ -10,7 +10,7 @@ import api.database as database
 from api.models import Job, JobLog, JobStatus, User, UserRole
 from api.schemas.job import JobSpec
 from api.security import hash_password
-from worker.agent import process_job
+from worker.agent import _worker_redis, process_job
 from worker.container import ContainerRunResult
 from worker.lock import WorkerLock
 from worker.repository import reap_zombie_jobs
@@ -170,6 +170,15 @@ async def test_process_job_skips_non_queued_job(fake_redis, monkeypatch):
 
     await process_job(str(job.id), "test-worker")
     run_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_worker_redis_socket_timeout_exceeds_brpop_timeout():
+    redis = _worker_redis()
+    try:
+        assert redis.connection_pool.connection_kwargs["socket_timeout"] > 5
+    finally:
+        await redis.aclose()
 
 
 @pytest.mark.asyncio

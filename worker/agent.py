@@ -5,6 +5,7 @@ import socket
 import uuid
 
 from redis.asyncio import Redis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from api.config import settings
 from api.models import JobStatus
@@ -15,6 +16,15 @@ from worker.lock import WorkerLock
 from worker.repository import finalize_job, load_job, mark_job_running, reap_zombie_jobs
 
 logger = logging.getLogger(__name__)
+
+
+def _worker_redis() -> Redis:
+    # BRPOP blocks up to worker_brpop_timeout_seconds; socket read must outlive that wait.
+    return Redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_timeout=settings.worker_brpop_timeout_seconds + 5,
+    )
 
 
 async def process_job(job_id: str, worker_hostname: str) -> None:
@@ -90,16 +100,24 @@ async def run_loop(redis: Redis, worker_hostname: str) -> None:
     if reaped:
         logger.warning("reaped %s zombie RUNNING jobs for %s", reaped, worker_hostname)
 
+    logger.info("worker agent started on %s — waiting for jobs on %s", worker_hostname, JOB_QUEUE_KEY)
+
     try:
         while True:
             if not await lock.refresh():
                 logger.error("lost worker lock — stopping agent")
                 break
 
-            item = await redis.brpop(
-                JOB_QUEUE_KEY,
-                timeout=settings.worker_brpop_timeout_seconds,
-            )
+            try:
+                item = await redis.brpop(
+                    JOB_QUEUE_KEY,
+                    timeout=settings.worker_brpop_timeout_seconds,
+                )
+            except RedisTimeoutError:
+                continue
+            except asyncio.CancelledError:
+                logger.info("worker agent shutting down")
+                break
             if item is None:
                 continue
 
@@ -112,7 +130,7 @@ async def run_loop(redis: Redis, worker_hostname: str) -> None:
 async def _async_main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     hostname = socket.gethostname()
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    redis = _worker_redis()
     try:
         await run_loop(redis, hostname)
     finally:
@@ -120,7 +138,10 @@ async def _async_main() -> None:
 
 
 def main() -> None:
-    asyncio.run(_async_main())
+    try:
+        asyncio.run(_async_main())
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

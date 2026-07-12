@@ -16,6 +16,8 @@ cp .env.example .env          # fill in real values (openssl rand -hex 32 for JW
 docker compose up -d          # Postgres + Redis
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+alembic upgrade head
+# First admin (once): ADMIN_EMAIL=... ADMIN_PASSWORD=... python scripts/create_admin.py
 uvicorn api.main:app --reload
 curl localhost:8000/api/v1/healthz
 pytest
