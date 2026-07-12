@@ -72,3 +72,7 @@ def generate_api_key() -> tuple[str, str, str]:
 
 def is_api_key_token(token: str) -> bool:
     return token.startswith(API_KEY_PREFIX)
+
+
+def generate_temporary_password() -> str:
+    return secrets.token_urlsafe(12)

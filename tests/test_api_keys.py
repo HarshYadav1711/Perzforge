@@ -93,7 +93,7 @@ async def test_scope_enforcement_denies_missing_scope(client: AsyncClient, test_
         client, tokens["access_token"], name="read-only", scopes=["jobs:read"]
     )
 
-    allowed = await client.post(
+    allowed = await client.get(
         "/api/v1/test/scope-probe/jobs-read",
         headers=auth_header(plaintext),
     )

@@ -35,6 +35,7 @@ class User(Base):
         default=UserRole.user,
     )
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -61,8 +61,8 @@ async def test_user() -> User:
             must_change_password=False,
         )
         session.add(user)
+        await session.flush()
         await session.commit()
-        await session.refresh(user)
         return user
 
 
@@ -76,8 +76,8 @@ async def other_user() -> User:
             must_change_password=False,
         )
         session.add(user)
+        await session.flush()
         await session.commit()
-        await session.refresh(user)
         return user
 
 
@@ -91,8 +91,8 @@ async def admin_user() -> User:
             must_change_password=False,
         )
         session.add(user)
+        await session.flush()
         await session.commit()
-        await session.refresh(user)
         return user
 
 

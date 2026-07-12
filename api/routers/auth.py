@@ -3,19 +3,21 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.config import settings
 from api.database import get_db
-from api.deps import get_current_user
+from api.deps import get_authenticated_user, get_current_user
 from api.models import RefreshToken, User
 from api.security import (
     create_access_token,
     generate_refresh_token,
+    hash_password,
     hash_token,
     refresh_token_expires_at,
+    verify_password,
     verify_password_constant_time,
 )
 
@@ -43,6 +45,13 @@ class UserResponse(BaseModel):
     email: str
     role: str
     must_change_password: bool
+
+
+class ChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    old_password: str
+    new_password: str = Field(min_length=12)
 
 
 def _refresh_cookie_kwargs() -> dict:
@@ -76,6 +85,12 @@ async def _get_refresh_token_row(db: AsyncSession, token: str) -> RefreshToken |
     token_hash = hash_token(token)
     result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
     return result.scalar_one_or_none()
+
+
+async def _revoke_all_refresh_families(db: AsyncSession, user_id: uuid.UUID) -> None:
+    await db.execute(
+        update(RefreshToken).where(RefreshToken.user_id == user_id).values(revoked=True)
+    )
 
 
 async def _revoke_token_family(db: AsyncSession, family_id: uuid.UUID) -> None:
@@ -122,7 +137,16 @@ async def login(
 ):
     # public: credential exchange endpoint
     user = await _get_user_by_email(db, body.email.lower())
-    if not verify_password_constant_time(body.password, user.password_hash if user else None):
+    if user is None or user.disabled:
+        verify_password_constant_time(
+            body.password,
+            user.password_hash if user is not None else None,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=INVALID_CREDENTIALS,
+        )
+    if not verify_password_constant_time(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=INVALID_CREDENTIALS,
@@ -210,3 +234,21 @@ async def logout(
             await db.commit()
 
     _clear_refresh_cookie(response)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(body.old_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid current password",
+        )
+
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = False
+    await _revoke_all_refresh_families(db, user.id)
+    await db.commit()
