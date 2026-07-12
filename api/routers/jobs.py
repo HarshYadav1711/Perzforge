@@ -28,7 +28,7 @@ class JobResponse(BaseModel):
     queued_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
-    worker_id: uuid.UUID | None
+    worker_id: str | None
     exit_code: int | None
     error_message: str | None
 
