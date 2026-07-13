@@ -1,7 +1,9 @@
 """Perzforge worker agent — executes queued jobs in hardened Docker containers."""
 import asyncio
+import contextlib
 import logging
 import socket
+import threading
 import uuid
 
 from redis.asyncio import Redis
@@ -11,8 +13,9 @@ from api.config import settings
 from api.models import JobStatus
 from api.queue import JOB_QUEUE_KEY
 from api.schemas.job import JobSpec
+from worker.cancel_listener import watch_for_cancel
 from worker.container import ContainerRunResult, run_container
-from worker.logs import publish_eof
+from worker.logs import publish_eof, publish_eof_cancelled
 from worker.lock import WorkerLock
 from worker.repository import finalize_job, load_job, mark_job_running, reap_zombie_jobs
 
@@ -28,7 +31,7 @@ def _worker_redis() -> Redis:
     )
 
 
-async def process_job(job_id: str, worker_hostname: str) -> None:
+async def process_job(job_id: str, worker_hostname: str, redis: Redis) -> None:
     try:
         job_uuid = uuid.UUID(job_id)
     except ValueError:
@@ -55,16 +58,37 @@ async def process_job(job_id: str, worker_hostname: str) -> None:
     if running_job is None:
         return
 
-    result = await asyncio.to_thread(
-        run_container,
-        spec,
-        job_id,
-        spec.timeout_minutes * 60,
-    )
+    cancel_event = threading.Event()
+    watch_task = asyncio.create_task(watch_for_cancel(redis, job_id, cancel_event))
+    try:
+        result = await asyncio.to_thread(
+            run_container,
+            spec,
+            job_id,
+            spec.timeout_minutes * 60,
+            cancel_event,
+        )
+    finally:
+        cancel_event.set()
+        watch_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watch_task
+
     await _apply_container_result(job_uuid, result)
 
 
 async def _apply_container_result(job_id: uuid.UUID, result: ContainerRunResult) -> None:
+    if result.cancelled:
+        await finalize_job(
+            job_id,
+            status=JobStatus.CANCELLED,
+            exit_code=None,
+            error_message=None,
+            log_tail=result.log_tail,
+        )
+        publish_eof_cancelled(str(job_id))
+        return
+
     if result.timed_out or result.error_message == "timeout":
         status = JobStatus.FAILED
         error_message = "timeout"
@@ -124,7 +148,7 @@ async def run_loop(redis: Redis, worker_hostname: str) -> None:
                 continue
 
             _, queued_job_id = item
-            await process_job(queued_job_id, worker_hostname)
+            await process_job(queued_job_id, worker_hostname, redis)
     finally:
         await lock.release()
 

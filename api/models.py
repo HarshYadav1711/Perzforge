@@ -53,6 +53,7 @@ class User(Base):
 class JobStatus(str, enum.Enum):
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
+    CANCELLING = "CANCELLING"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
@@ -70,7 +71,7 @@ class Job(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     spec: Mapped[dict] = mapped_column(JSONB, nullable=False)
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status", native_enum=False),
+        Enum(JobStatus, name="job_status", native_enum=False, length=16),
         nullable=False,
         default=JobStatus.QUEUED,
     )

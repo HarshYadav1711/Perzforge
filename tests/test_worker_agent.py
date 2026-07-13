@@ -91,14 +91,14 @@ async def test_process_job_success_marks_succeeded_and_persists_logs(
     job = await _create_queued_job()
     monkeypatch.setattr(
         "worker.agent.run_container",
-        lambda spec, job_id, timeout_seconds: ContainerRunResult(
+        lambda spec, job_id, timeout_seconds, cancel_event=None: ContainerRunResult(
             exit_code=0,
             error_message=None,
             log_tail="ok\n",
         ),
     )
 
-    await process_job(str(job.id), "test-worker")
+    await process_job(str(job.id), "test-worker", fake_redis)
 
     async with database.SessionLocal() as session:
         refreshed = await session.get(Job, job.id)
@@ -118,14 +118,14 @@ async def test_process_job_nonzero_exit_marks_failed(fake_redis, monkeypatch):
     job = await _create_queued_job(name="fail-job")
     monkeypatch.setattr(
         "worker.agent.run_container",
-        lambda spec, job_id, timeout_seconds: ContainerRunResult(
+        lambda spec, job_id, timeout_seconds, cancel_event=None: ContainerRunResult(
             exit_code=7,
             error_message=None,
             log_tail="boom\n",
         ),
     )
 
-    await process_job(str(job.id), "test-worker")
+    await process_job(str(job.id), "test-worker", fake_redis)
 
     async with database.SessionLocal() as session:
         refreshed = await session.get(Job, job.id)
@@ -139,7 +139,7 @@ async def test_process_job_timeout_marks_failed(fake_redis, monkeypatch):
     job = await _create_queued_job(name="timeout-job")
     monkeypatch.setattr(
         "worker.agent.run_container",
-        lambda spec, job_id, timeout_seconds: ContainerRunResult(
+        lambda spec, job_id, timeout_seconds, cancel_event=None: ContainerRunResult(
             exit_code=None,
             error_message="timeout",
             log_tail="",
@@ -147,7 +147,7 @@ async def test_process_job_timeout_marks_failed(fake_redis, monkeypatch):
         ),
     )
 
-    await process_job(str(job.id), "test-worker")
+    await process_job(str(job.id), "test-worker", fake_redis)
 
     async with database.SessionLocal() as session:
         refreshed = await session.get(Job, job.id)
@@ -168,7 +168,7 @@ async def test_process_job_skips_non_queued_job(fake_redis, monkeypatch):
     run_mock = MagicMock()
     monkeypatch.setattr("worker.agent.run_container", run_mock)
 
-    await process_job(str(job.id), "test-worker")
+    await process_job(str(job.id), "test-worker", fake_redis)
     run_mock.assert_not_called()
 
 

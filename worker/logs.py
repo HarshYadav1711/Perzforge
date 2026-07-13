@@ -4,7 +4,7 @@ from collections import deque
 import redis
 
 from api.config import settings
-from api.log_stream import eof_message, job_log_buffer_key, job_log_channel
+from api.log_stream import eof_cancelled_message, eof_message, job_log_buffer_key, job_log_channel
 
 _sync_redis: redis.Redis | None = None
 
@@ -28,6 +28,17 @@ def publish_line(job_id: str, line: str) -> None:
     buffer_key = job_log_buffer_key(job_id)
     client.publish(channel, line)
     client.rpush(buffer_key, line)
+    client.ltrim(buffer_key, -settings.job_log_replay_max_lines, -1)
+
+
+def publish_eof_cancelled(job_id: str) -> None:
+    """Signal cancelled stream end to live subscribers."""
+    payload = eof_cancelled_message()
+    client = _get_sync_redis()
+    channel = job_log_channel(job_id)
+    buffer_key = job_log_buffer_key(job_id)
+    client.publish(channel, payload)
+    client.rpush(buffer_key, payload)
     client.ltrim(buffer_key, -settings.job_log_replay_max_lines, -1)
 
 

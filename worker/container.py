@@ -1,5 +1,6 @@
-"""Docker container execution for worker jobs (story B3)."""
+"""Docker container execution for worker jobs (story B3/B5)."""
 import threading
+import time
 from dataclasses import dataclass
 
 import docker
@@ -18,6 +19,7 @@ class ContainerRunResult:
     error_message: str | None
     log_tail: str
     timed_out: bool = False
+    cancelled: bool = False
 
 
 def _validate_spec(spec: JobSpec) -> JobSpec:
@@ -37,7 +39,12 @@ def _cleanup_container(client: docker.DockerClient, container_id: str, volume_na
         pass
 
 
-def run_container(spec: JobSpec, job_id: str, timeout_seconds: int) -> ContainerRunResult:
+def run_container(
+    spec: JobSpec,
+    job_id: str,
+    timeout_seconds: int,
+    cancel_event: threading.Event | None = None,
+) -> ContainerRunResult:
     """Run a job container with hardened defaults. Synchronous — call via asyncio.to_thread."""
     try:
         validated = _validate_spec(spec)
@@ -99,22 +106,21 @@ def run_container(spec: JobSpec, job_id: str, timeout_seconds: int) -> Container
         )
         log_thread.start()
         try:
-            try:
-                exit_result = container.wait(timeout=timeout_seconds)
-            except Exception:
-                container.stop(timeout=10)
-                try:
-                    container.kill()
-                except APIError:
-                    pass
+            exit_result = _wait_for_container(
+                container,
+                timeout_seconds,
+                cancel_event,
+            )
+            if isinstance(exit_result, ContainerRunResult):
                 stop_logs.set()
                 log_thread.join(timeout=5)
                 collector.flush()
                 return ContainerRunResult(
-                    exit_code=None,
-                    error_message="timeout",
+                    exit_code=exit_result.exit_code,
+                    error_message=exit_result.error_message,
                     log_tail=collector.tail(),
-                    timed_out=True,
+                    timed_out=exit_result.timed_out,
+                    cancelled=exit_result.cancelled,
                 )
 
             stop_logs.set()
@@ -144,6 +150,55 @@ def run_container(spec: JobSpec, job_id: str, timeout_seconds: int) -> Container
     finally:
         if container is not None:
             _cleanup_container(client, container.id, volume_name)
+
+
+def _wait_for_container(
+    container,
+    timeout_seconds: int,
+    cancel_event: threading.Event | None,
+) -> dict | ContainerRunResult:
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            return _stop_container_cancelled(container)
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            container.stop(timeout=10)
+            try:
+                container.kill()
+            except APIError:
+                pass
+            return ContainerRunResult(
+                exit_code=None,
+                error_message="timeout",
+                log_tail="",
+                timed_out=True,
+            )
+
+        wait_seconds = min(1.0, remaining)
+        container.reload()
+        if container.status != "running":
+            return container.wait(condition="not-running", timeout=1)
+
+        time.sleep(wait_seconds)
+
+
+def _stop_container_cancelled(container) -> ContainerRunResult:
+    container.stop(timeout=10)
+    try:
+        container.wait(condition="not-running", timeout=12)
+    except Exception:
+        try:
+            container.kill()
+        except APIError:
+            pass
+    return ContainerRunResult(
+        exit_code=None,
+        error_message=None,
+        log_tail="",
+        cancelled=True,
+    )
 
 
 def _follow_logs(container, collector: LogCollector, stop_event: threading.Event) -> None:

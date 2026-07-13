@@ -15,7 +15,17 @@ async def load_job(job_id: uuid.UUID) -> Job | None:
 
 async def reap_zombie_jobs(worker_hostname: str) -> int:
     async with database.SessionLocal() as session:
-        result = await session.execute(
+        cancelling_result = await session.execute(
+            update(Job)
+            .where(Job.worker_id == worker_hostname, Job.status == JobStatus.CANCELLING)
+            .values(
+                status=JobStatus.CANCELLED,
+                finished_at=datetime.now(UTC),
+                error_message=None,
+            )
+            .returning(Job.id)
+        )
+        running_result = await session.execute(
             update(Job)
             .where(Job.worker_id == worker_hostname, Job.status == JobStatus.RUNNING)
             .values(
@@ -26,7 +36,7 @@ async def reap_zombie_jobs(worker_hostname: str) -> int:
             .returning(Job.id)
         )
         await session.commit()
-        return len(result.fetchall())
+        return len(cancelling_result.fetchall()) + len(running_result.fetchall())
 
 
 async def mark_job_running(job_id: uuid.UUID, worker_hostname: str) -> Job | None:

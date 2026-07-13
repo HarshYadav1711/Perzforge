@@ -11,13 +11,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.config import settings
 from api.database import get_db
 from api.deps import Principal, UserRole, require_scopes
+from api.job_control import cancel_command_message, job_control_channel
 from api.models import Job, JobStatus
 from api.queue import enqueue_job, get_redis
 from api.schemas.job import JobSpec, SubmitJobRequest
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
-ACTIVE_JOB_STATUSES = (JobStatus.QUEUED, JobStatus.RUNNING)
+ACTIVE_JOB_STATUSES = (JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.CANCELLING)
+TERMINAL_JOB_STATUSES = {
+    JobStatus.SUCCEEDED,
+    JobStatus.FAILED,
+    JobStatus.CANCELLED,
+}
+JOB_ALREADY_FINISHED = "job already finished"
 
 
 class JobResponse(BaseModel):
@@ -149,4 +156,33 @@ async def get_job(
     db: AsyncSession = Depends(get_db),
 ):
     job = await _get_owned_job(db, job_id, principal)
+    return _to_job_response(job)
+
+
+@router.post("/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(
+    job_id: uuid.UUID,
+    principal: Principal = Depends(require_scopes("jobs:write")),
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    job = await _get_owned_job(db, job_id, principal)
+
+    if job.status in TERMINAL_JOB_STATUSES or job.status == JobStatus.CANCELLING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=JOB_ALREADY_FINISHED,
+        )
+
+    if job.status == JobStatus.QUEUED:
+        job.status = JobStatus.CANCELLED
+        job.finished_at = datetime.now(UTC)
+        await db.commit()
+        await db.refresh(job)
+        return _to_job_response(job)
+
+    job.status = JobStatus.CANCELLING
+    await db.commit()
+    await redis.publish(job_control_channel(str(job.id)), cancel_command_message())
+    await db.refresh(job)
     return _to_job_response(job)

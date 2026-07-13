@@ -21,6 +21,10 @@ def eof_message(exit_code: int | None) -> str:
     return json.dumps({"event": EOF_EVENT, "exit_code": exit_code})
 
 
+def eof_cancelled_message() -> str:
+    return json.dumps({"event": EOF_EVENT, "cancelled": True})
+
+
 def parse_stream_payload(payload: str) -> tuple[str | None, dict[str, Any] | None]:
     if not payload.startswith("{"):
         return payload, None
