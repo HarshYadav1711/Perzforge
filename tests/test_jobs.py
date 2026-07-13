@@ -103,7 +103,11 @@ async def test_submit_over_concurrent_cap_returns_429(client: AsyncClient, test_
         json=valid_job_payload(name="one-too-many"),
     )
     assert over_cap.status_code == 429
-    assert str(settings.max_concurrent_jobs_per_user) in over_cap.json()["detail"]
+    body = over_cap.json()
+    assert body["quota"] == "max_concurrent_jobs"
+    assert body["limit"] == settings.max_concurrent_jobs_per_user
+    assert body["current"] == settings.max_concurrent_jobs_per_user
+    assert "max_concurrent_jobs" in body["detail"]
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     environment: str = "dev"
     allowed_image_prefixes: str = "python:,pytorch/,tensorflow/,nvidia/cuda"
     max_concurrent_jobs_per_user: int = 2
+    max_jobs_per_day_per_user: int = 10
+    max_storage_mb_per_user: int = 2048
+    max_instances_per_user: int = 1
+    max_llm_tokens_per_day_per_user: int = 50000
+    quota_counter_ttl_seconds: int = 48 * 60 * 60
     job_queue_key: str = "perzforge:jobs:queue"
     worker_lock_key: str = "perzforge:worker:lock"
     worker_lock_ttl_seconds: int = 30

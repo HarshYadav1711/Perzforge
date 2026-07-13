@@ -4,6 +4,7 @@ A2 adds: User, RefreshToken
 A3 adds: ApiKey
 B1 adds: Job
 B3 adds: JobLog
+E1 adds: Quota
 """
 import enum
 import uuid
@@ -48,6 +49,9 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     jobs: Mapped[list["Job"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    quota: Mapped["Quota | None"] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class JobStatus(str, enum.Enum):
@@ -150,3 +154,20 @@ class RefreshToken(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="refresh_tokens")
+
+
+class Quota(Base):
+    __tablename__ = "quotas"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    max_concurrent_jobs: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_jobs_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_storage_mb: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_instances: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_llm_tokens_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="quota")

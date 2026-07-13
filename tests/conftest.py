@@ -13,7 +13,7 @@ import api.database as database
 from api.config import settings
 from api.database import Base, get_db
 from api.main import app
-from api.models import ApiKey, Job, JobLog, RefreshToken, User, UserRole
+from api.models import ApiKey, Job, JobLog, Quota, RefreshToken, User, UserRole
 from api.queue import get_redis
 from api.security import hash_password
 
@@ -45,6 +45,7 @@ async def clean_auth_tables() -> AsyncGenerator[None, None]:
         await session.execute(delete(Job))
         await session.execute(delete(ApiKey))
         await session.execute(delete(RefreshToken))
+        await session.execute(delete(Quota))
         await session.execute(delete(User))
         await session.commit()
     yield

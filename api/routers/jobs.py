@@ -1,4 +1,4 @@
-"""Job submission and listing routes (story B1)."""
+"""Job submission and listing routes (story B1/E1)."""
 import uuid
 from datetime import UTC, datetime
 
@@ -8,12 +8,12 @@ from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.config import settings
 from api.database import get_db
 from api.deps import Principal, UserRole, require_scopes
 from api.job_control import cancel_command_message, job_control_channel
 from api.models import Job, JobStatus
 from api.queue import enqueue_job, get_redis
+from api.quotas import QuotaResource, enforce
 from api.schemas.job import JobSpec, SubmitJobRequest
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -62,15 +62,6 @@ def _to_job_response(job: Job) -> JobResponse:
     )
 
 
-async def _count_active_jobs(db: AsyncSession, user_id: uuid.UUID) -> int:
-    result = await db.execute(
-        select(func.count())
-        .select_from(Job)
-        .where(Job.user_id == user_id, Job.status.in_(ACTIVE_JOB_STATUSES))
-    )
-    return result.scalar_one()
-
-
 async def _get_owned_job(
     db: AsyncSession,
     job_id: uuid.UUID,
@@ -94,15 +85,8 @@ async def submit_job(
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
-    active_jobs = await _count_active_jobs(db, principal.user.id)
-    if active_jobs >= settings.max_concurrent_jobs_per_user:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                f"Concurrent job limit reached "
-                f"({settings.max_concurrent_jobs_per_user} active jobs per user)"
-            ),
-        )
+    await enforce(db, redis, principal.user, QuotaResource.CONCURRENT_JOBS)
+    await enforce(db, redis, principal.user, QuotaResource.JOBS_PER_DAY)
 
     job = Job(
         user_id=principal.user.id,
