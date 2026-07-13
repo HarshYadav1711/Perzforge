@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     worker_lock_heartbeat_seconds: int = 10
     worker_brpop_timeout_seconds: int = 5
     job_log_tail_lines: int = 10000
+    job_log_replay_max_lines: int = 5000
+    job_log_ws_send_timeout_seconds: float = 0.05
+    job_log_ws_thin_interval: int = 10
 
     def image_prefixes(self) -> tuple[str, ...]:
         return tuple(prefix.strip() for prefix in self.allowed_image_prefixes.split(",") if prefix.strip())

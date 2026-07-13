@@ -1,4 +1,5 @@
 """Docker container execution for worker jobs (story B3)."""
+import threading
 from dataclasses import dataclass
 
 import docker
@@ -90,29 +91,44 @@ def run_container(spec: JobSpec, job_id: str, timeout_seconds: int) -> Container
             client.images.pull(validated.image)
 
         container = client.containers.run(**run_kwargs)
-        try:
-            exit_result = container.wait(timeout=timeout_seconds)
-        except Exception:
-            container.stop(timeout=10)
-            try:
-                container.kill()
-            except APIError:
-                pass
-            _collect_logs(container, collector)
-            return ContainerRunResult(
-                exit_code=None,
-                error_message="timeout",
-                log_tail=collector.tail(),
-                timed_out=True,
-            )
-
-        _collect_logs(container, collector)
-        exit_code = int(exit_result.get("StatusCode", 1))
-        return ContainerRunResult(
-            exit_code=exit_code,
-            error_message=None,
-            log_tail=collector.tail(),
+        stop_logs = threading.Event()
+        log_thread = threading.Thread(
+            target=_follow_logs,
+            args=(container, collector, stop_logs),
+            daemon=True,
         )
+        log_thread.start()
+        try:
+            try:
+                exit_result = container.wait(timeout=timeout_seconds)
+            except Exception:
+                container.stop(timeout=10)
+                try:
+                    container.kill()
+                except APIError:
+                    pass
+                stop_logs.set()
+                log_thread.join(timeout=5)
+                collector.flush()
+                return ContainerRunResult(
+                    exit_code=None,
+                    error_message="timeout",
+                    log_tail=collector.tail(),
+                    timed_out=True,
+                )
+
+            stop_logs.set()
+            log_thread.join(timeout=5)
+            collector.flush()
+            exit_code = int(exit_result.get("StatusCode", 1))
+            return ContainerRunResult(
+                exit_code=exit_code,
+                error_message=None,
+                log_tail=collector.tail(),
+            )
+        finally:
+            stop_logs.set()
+            log_thread.join(timeout=2)
     except ImageNotFound:
         return ContainerRunResult(
             exit_code=None,
@@ -128,6 +144,17 @@ def run_container(spec: JobSpec, job_id: str, timeout_seconds: int) -> Container
     finally:
         if container is not None:
             _cleanup_container(client, container.id, volume_name)
+
+
+def _follow_logs(container, collector: LogCollector, stop_event: threading.Event) -> None:
+    try:
+        for chunk in container.logs(stream=True, follow=True):
+            if stop_event.is_set():
+                break
+            text = chunk.decode("utf-8", errors="replace")
+            collector.append(text)
+    except APIError:
+        return
 
 
 def _collect_logs(container, collector: LogCollector) -> None:

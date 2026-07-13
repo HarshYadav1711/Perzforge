@@ -12,6 +12,7 @@ from api.models import JobStatus
 from api.queue import JOB_QUEUE_KEY
 from api.schemas.job import JobSpec
 from worker.container import ContainerRunResult, run_container
+from worker.logs import publish_eof
 from worker.lock import WorkerLock
 from worker.repository import finalize_job, load_job, mark_job_running, reap_zombie_jobs
 
@@ -88,6 +89,7 @@ async def _apply_container_result(job_id: uuid.UUID, result: ContainerRunResult)
         error_message=error_message,
         log_tail=result.log_tail,
     )
+    publish_eof(str(job_id), exit_code)
 
 
 async def run_loop(redis: Redis, worker_hostname: str) -> None:

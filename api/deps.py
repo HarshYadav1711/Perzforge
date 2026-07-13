@@ -141,7 +141,10 @@ async def get_current_principal(
             detail="Not authenticated",
         )
 
-    token = credentials.credentials
+    return await resolve_principal_from_token(credentials.credentials, db)
+
+
+async def resolve_principal_from_token(token: str, db: AsyncSession) -> Principal:
     if is_api_key_token(token):
         principal = await _authenticate_api_key(token, db)
     else:
