@@ -80,7 +80,7 @@ async def _create_job(
 
 
 @pytest.fixture
-async def ws_client(fake_redis) -> TestClient:
+async def ws_client(fake_redis, clean_auth_tables) -> TestClient:
     async def override_get_db():
         async with database.SessionLocal() as session:
             yield session
@@ -88,11 +88,22 @@ async def ws_client(fake_redis) -> TestClient:
     async def override_get_redis():
         yield fake_redis
 
+    from api.queue import set_redis_client
+    from api.rate_limit import register_script
+
+    script_sha = await register_script(fake_redis)
+    app.state.redis = fake_redis
+    app.state.rate_limit_script_sha = script_sha
+    set_redis_client(fake_redis)
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_redis] = override_get_redis
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
+    set_redis_client(None)
+    app.state.redis = None
+    app.state.rate_limit_script_sha = None
 
 
 @pytest.mark.asyncio

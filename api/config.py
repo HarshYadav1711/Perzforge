@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     job_log_replay_max_lines: int = 5000
     job_log_ws_send_timeout_seconds: float = 0.05
     job_log_ws_thin_interval: int = 10
+    # Rate limit tiers (story E2)
+    rate_limit_default_per_min: int = 60
+    rate_limit_default_burst: int = 90
+    rate_limit_auth_per_min: int = 5
+    rate_limit_auth_burst: int = 5
+    rate_limit_jobs_write_per_hour: int = 10
+    rate_limit_jobs_write_burst: int = 10
+    rate_limit_llm_per_min: int = 20
+    rate_limit_llm_burst: int = 20
 
     def image_prefixes(self) -> tuple[str, ...]:
         return tuple(prefix.strip() for prefix in self.allowed_image_prefixes.split(",") if prefix.strip())

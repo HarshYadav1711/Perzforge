@@ -1,5 +1,4 @@
 """Shared dependencies."""
-import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,7 +10,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.database import SessionLocal, get_db
+import api.database as database
+from api.database import get_db
 from api.models import ApiKey, User, UserRole
 from api.scopes import ROLE_SCOPES
 from api.security import decode_access_token, hash_token, is_api_key_token
@@ -50,13 +50,18 @@ def _reject_password_change_required(user: User) -> None:
 
 
 async def _touch_api_key_last_used(key_id: uuid.UUID) -> None:
-    async with SessionLocal() as session:
-        await session.execute(
-            update(ApiKey)
-            .where(ApiKey.id == key_id)
-            .values(last_used_at=datetime.now(UTC))
-        )
-        await session.commit()
+    """Best-effort last_used update; never block the request path on failure."""
+    try:
+        async with database.SessionLocal() as session:
+            await session.execute(
+                update(ApiKey)
+                .where(ApiKey.id == key_id)
+                .values(last_used_at=datetime.now(UTC))
+            )
+            await session.commit()
+    except Exception:
+        # Avoid leaking background-task errors into the event loop during tests/truncates.
+        return
 
 
 async def _authenticate_api_key(token: str, db: AsyncSession) -> Principal:
@@ -91,7 +96,7 @@ async def _authenticate_api_key(token: str, db: AsyncSession) -> Principal:
 
     _reject_disabled_user(user)
 
-    asyncio.create_task(_touch_api_key_last_used(api_key.id))
+    await _touch_api_key_last_used(api_key.id)
     return Principal(user=user, api_key=api_key)
 
 
