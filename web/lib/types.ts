@@ -94,6 +94,7 @@ export interface MeQuota {
 export const ALLOWED_IMAGES = [
   "python:3.12-alpine",
   "python:3.12-slim",
+  "ubuntu:26.04",
   "pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime",
   "tensorflow/tensorflow:2.16.1",
   "nvidia/cuda:12.4.1-runtime-ubuntu22.04",

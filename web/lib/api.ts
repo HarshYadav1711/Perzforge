@@ -55,8 +55,21 @@ export function configureAuthHandlers(handlers: {
 }
 
 function apiBase(): string {
-  const base = process.env.NEXT_PUBLIC_API_BASE ?? "";
-  return base.replace(/\/$/, "");
+  const raw = (process.env.NEXT_PUBLIC_API_BASE ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+  // Bare host:port without a scheme is treated as a relative path by the browser
+  // (e.g. "100.x.x.x:8000/api/..." → 404 on the Next origin). Normalize or ignore.
+  if (!/^https?:\/\//i.test(raw)) {
+    if (typeof console !== "undefined") {
+      console.warn(
+        `NEXT_PUBLIC_API_BASE="${raw}" is missing http(s)://; ignoring and using same-origin proxy`,
+      );
+    }
+    return "";
+  }
+  return raw.replace(/\/$/, "");
 }
 
 function url(path: string): string {
