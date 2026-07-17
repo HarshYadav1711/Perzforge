@@ -11,3 +11,14 @@ dist/
 .mypy_cache/
 minio-data/
 postgres-data/
+
+# Next.js dashboard (story F1)
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/playwright/.cache/
+web/coverage/

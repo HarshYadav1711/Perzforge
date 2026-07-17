@@ -25,6 +25,22 @@ services:
       interval: 5s
       retries: 10
 
+  # Optional dashboard (story F1). API must be reachable from the container.
+  #   docker compose --profile web up -d --build web
+  web:
+    profiles: ["web"]
+    build:
+      context: ./web
+      args:
+        API_PROXY_TARGET: http://host.docker.internal:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      API_PROXY_TARGET: http://host.docker.internal:8000
+      NEXT_PUBLIC_WS_BASE: ws://127.0.0.1:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   # Uncomment in Phase 2 (story B4):
   # minio:
   #   image: minio/minio
