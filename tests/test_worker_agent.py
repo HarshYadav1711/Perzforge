@@ -91,12 +91,13 @@ async def test_process_job_success_marks_succeeded_and_persists_logs(
     job = await _create_queued_job()
     monkeypatch.setattr(
         "worker.agent.run_container",
-        lambda spec, job_id, timeout_seconds, cancel_event=None: ContainerRunResult(
+        lambda spec, job_id, timeout_seconds, cancel_event=None, **kwargs: ContainerRunResult(
             exit_code=0,
             error_message=None,
             log_tail="ok\n",
         ),
     )
+    monkeypatch.setattr("worker.agent.lookup_mlflow_run_id", lambda **kwargs: None)
 
     await process_job(str(job.id), "test-worker", fake_redis)
 
@@ -118,7 +119,7 @@ async def test_process_job_nonzero_exit_marks_failed(fake_redis, monkeypatch):
     job = await _create_queued_job(name="fail-job")
     monkeypatch.setattr(
         "worker.agent.run_container",
-        lambda spec, job_id, timeout_seconds, cancel_event=None: ContainerRunResult(
+        lambda spec, job_id, timeout_seconds, cancel_event=None, **kwargs: ContainerRunResult(
             exit_code=7,
             error_message=None,
             log_tail="boom\n",
@@ -139,7 +140,7 @@ async def test_process_job_timeout_marks_failed(fake_redis, monkeypatch):
     job = await _create_queued_job(name="timeout-job")
     monkeypatch.setattr(
         "worker.agent.run_container",
-        lambda spec, job_id, timeout_seconds, cancel_event=None: ContainerRunResult(
+        lambda spec, job_id, timeout_seconds, cancel_event=None, **kwargs: ContainerRunResult(
             exit_code=None,
             error_message="timeout",
             log_tail="",

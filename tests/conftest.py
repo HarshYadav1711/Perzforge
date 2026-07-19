@@ -19,7 +19,7 @@ from api.rate_limit import register_script
 from api.security import hash_password
 
 _TRUNCATE_SQL = (
-    "TRUNCATE job_logs, jobs, api_keys, refresh_tokens, quotas, users "
+    "TRUNCATE models, job_logs, jobs, api_keys, refresh_tokens, quotas, users "
     "RESTART IDENTITY CASCADE"
 )
 
@@ -33,6 +33,15 @@ async def configure_test_database() -> AsyncGenerator[None, None]:
 
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all does not ALTER existing tables — ensure B4 columns exist
+        await conn.execute(
+            text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS mlflow_run_id VARCHAR(64)")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS artifact_error VARCHAR(1024)"
+            )
+        )
     yield
     await test_engine.dispose()
 

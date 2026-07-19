@@ -1,10 +1,15 @@
-"""Docker container execution for worker jobs (story B3/B5)."""
+"""Docker container execution for worker jobs (story B3/B5/B4)."""
+import io
+import shutil
+import tarfile
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import docker
-from docker.errors import APIError, ImageNotFound
+from docker.errors import APIError, ImageNotFound, NotFound
 from docker.types import DeviceRequest, Mount
 from pydantic import ValidationError
 
@@ -20,10 +25,20 @@ class ContainerRunResult:
     log_tail: str
     timed_out: bool = False
     cancelled: bool = False
+    outputs_dir: Path | None = None
 
 
 def _validate_spec(spec: JobSpec) -> JobSpec:
     return JobSpec.model_validate(spec.model_dump())
+
+
+def _job_environment(spec: JobSpec, job_id: str, job_name: str) -> dict[str, str]:
+    env = dict(spec.env)
+    if settings.mlflow_tracking_uri:
+        env.setdefault("MLFLOW_TRACKING_URI", settings.mlflow_tracking_uri)
+        env.setdefault("MLFLOW_EXPERIMENT_NAME", job_name)
+        env.setdefault("MLFLOW_RUN_TAG_JOB_ID", job_id)
+    return env
 
 
 def _cleanup_container(client: docker.DockerClient, container_id: str, volume_name: str) -> None:
@@ -39,11 +54,52 @@ def _cleanup_container(client: docker.DockerClient, container_id: str, volume_na
         pass
 
 
+def _extract_outputs(container, dest: Path) -> Path | None:
+    """Copy /workspace/outputs from the container into dest. Returns dest or None if empty/missing."""
+    try:
+        bits, _stat = container.get_archive("/workspace/outputs")
+    except (APIError, NotFound):
+        return None
+
+    dest.mkdir(parents=True, exist_ok=True)
+    buffer = io.BytesIO()
+    for chunk in bits:
+        buffer.write(chunk)
+    buffer.seek(0)
+
+    try:
+        with tarfile.open(fileobj=buffer, mode="r|") as archive:
+            # outputs/ is the archive root member name from get_archive
+            archive.extractall(path=dest, filter="data")
+    except tarfile.TarError:
+        return None
+
+    # Flatten dest/outputs/* → dest/*
+    nested = dest / "outputs"
+    if nested.is_dir():
+        for child in list(nested.iterdir()):
+            target = dest / child.name
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            shutil.move(str(child), str(target))
+        shutil.rmtree(nested, ignore_errors=True)
+
+    has_files = any(path.is_file() for path in dest.rglob("*"))
+    if not has_files:
+        return None
+    return dest
+
+
 def run_container(
     spec: JobSpec,
     job_id: str,
     timeout_seconds: int,
     cancel_event: threading.Event | None = None,
+    *,
+    job_name: str = "",
 ) -> ContainerRunResult:
     """Run a job container with hardened defaults. Synchronous — call via asyncio.to_thread."""
     try:
@@ -59,15 +115,15 @@ def run_container(
     volume_name = f"perzforge-job-{job_id}"
     collector = LogCollector(job_id)
     container = None
+    outputs_temp: Path | None = None
 
     run_kwargs: dict = {
         "image": validated.image,
         "command": validated.command,
-        "environment": validated.env,
+        "environment": _job_environment(validated, job_id, job_name or job_id),
         "user": "1000:1000",
         "cap_drop": ["ALL"],
         "security_opt": ["no-new-privileges"],
-        "network_mode": "none",
         "mem_limit": "6g",
         "nano_cpus": int(4e9),
         "pids_limit": 256,
@@ -86,6 +142,11 @@ def run_container(
         "stdout": True,
         "stderr": True,
     }
+    if settings.docker_job_network:
+        run_kwargs["network"] = settings.docker_job_network
+    else:
+        run_kwargs["network_mode"] = "none"
+
     if validated.gpu:
         run_kwargs["device_requests"] = [
             DeviceRequest(count=-1, capabilities=[["gpu"]])
@@ -127,10 +188,20 @@ def run_container(
             log_thread.join(timeout=5)
             collector.flush()
             exit_code = int(exit_result.get("StatusCode", 1))
+
+            extracted: Path | None = None
+            if exit_code == 0:
+                outputs_temp = Path(tempfile.mkdtemp(prefix=f"perzforge-out-{job_id}-"))
+                extracted = _extract_outputs(container, outputs_temp)
+                if extracted is None:
+                    shutil.rmtree(outputs_temp, ignore_errors=True)
+                    outputs_temp = None
+
             return ContainerRunResult(
                 exit_code=exit_code,
                 error_message=None,
                 log_tail=collector.tail(),
+                outputs_dir=extracted,
             )
         finally:
             stop_logs.set()

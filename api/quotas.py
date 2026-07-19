@@ -156,6 +156,24 @@ async def enforce(
             await redis.expire(key, QUOTA_COUNTER_TTL_SECONDS)
 
 
+async def release(
+    redis: Redis,
+    user: User,
+    resource: QuotaResource,
+    amount: int = 1,
+) -> None:
+    """Release previously consumed Redis-backed quota (storage / instances)."""
+    if amount < 1:
+        raise ValueError("amount must be >= 1")
+    if resource not in ABSOLUTE_REDIS_RESOURCES and resource not in DAILY_REDIS_RESOURCES:
+        return
+
+    key = quota_counter_key(user.id, resource)
+    new_value = await redis.decrby(key, amount)
+    if new_value < 0:
+        await redis.set(key, 0)
+
+
 async def usage_snapshot(
     db: AsyncSession,
     redis: Redis,

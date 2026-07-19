@@ -95,6 +95,27 @@ export default function JobDetailPage() {
         <dd className="font-mono text-xs">{JSON.stringify(job.spec.command)}</dd>
         <dt className="text-[var(--muted)]">GPU</dt>
         <dd>{job.spec.gpu ? "yes" : "no"}</dd>
+        {job.mlflow_run_id ? (
+          <>
+            <dt className="text-[var(--muted)]">MLflow</dt>
+            <dd>
+              <a
+                href={`${(process.env.NEXT_PUBLIC_MLFLOW_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "")}/#/runs/${job.mlflow_run_id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[var(--accent)] hover:underline"
+              >
+                Open run {job.mlflow_run_id.slice(0, 8)}…
+              </a>
+            </dd>
+          </>
+        ) : null}
+        {job.artifact_error ? (
+          <>
+            <dt className="text-[var(--muted)]">Artifacts</dt>
+            <dd className="text-amber-300">{job.artifact_error}</dd>
+          </>
+        ) : null}
         {job.error_message ? (
           <>
             <dt className="text-[var(--muted)]">Error</dt>

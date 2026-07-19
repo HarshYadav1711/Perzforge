@@ -100,7 +100,7 @@ async def test_cancel_running_reaches_cancelled_within_12_seconds(
 ):
     job = await _create_job(test_user.id, status=JobStatus.QUEUED)
 
-    def slow_run(spec, job_id, timeout_seconds, cancel_event=None):
+    def slow_run(spec, job_id, timeout_seconds, cancel_event=None, **kwargs):
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if cancel_event is not None and cancel_event.is_set():
@@ -114,6 +114,7 @@ async def test_cancel_running_reaches_cancelled_within_12_seconds(
         return ContainerRunResult(exit_code=0, error_message=None, log_tail="done\n")
 
     monkeypatch.setattr("worker.agent.run_container", slow_run)
+    monkeypatch.setattr("worker.agent.lookup_mlflow_run_id", lambda **kwargs: None)
 
     task = asyncio.create_task(process_job(str(job.id), "test-worker", fake_redis))
 

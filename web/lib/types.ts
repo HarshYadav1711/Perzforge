@@ -27,6 +27,8 @@ export interface Job {
   worker_id: string | null;
   exit_code: number | null;
   error_message: string | null;
+  mlflow_run_id: string | null;
+  artifact_error: string | null;
 }
 
 export interface JobList {
@@ -89,6 +91,35 @@ export interface MeQuota {
     max_llm_tokens_per_day: number;
   };
   usage: Record<string, QuotaUsageEntry>;
+}
+
+export interface ModelArtifact {
+  id: string;
+  name: string;
+  version: number;
+  source_job_id: string | null;
+  minio_prefix: string;
+  size_bytes: number;
+  framework: string | null;
+  created_at: string;
+}
+
+export interface ModelList {
+  items: ModelArtifact[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ModelDownloadFile {
+  key: string;
+  url: string;
+  size: number;
+}
+
+export interface ModelDownload {
+  files: ModelDownloadFile[];
+  expires_in: number;
 }
 
 export const ALLOWED_IMAGES = [

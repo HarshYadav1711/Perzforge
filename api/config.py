@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     rate_limit_jobs_write_burst: int = 10
     rate_limit_llm_per_min: int = 20
     rate_limit_llm_burst: int = 20
+    # Object storage / experiment tracking (story B4)
+    minio_endpoint: str = "http://127.0.0.1:9000"
+    minio_access_key: str = "perzforge"
+    minio_secret_key: str = "changeme-minio-pass"
+    minio_bucket: str = "models"
+    minio_region: str = "us-east-1"
+    minio_secure: bool = False
+    mlflow_tracking_uri: str = "http://127.0.0.1:5000"
+    # Docker network for job containers (empty = network_mode none; set to reach MLflow)
+    docker_job_network: str = ""
 
     def image_prefixes(self) -> tuple[str, ...]:
         return tuple(prefix.strip() for prefix in self.allowed_image_prefixes.split(",") if prefix.strip())

@@ -5,6 +5,9 @@ import {
   Job,
   JobList,
   MeQuota,
+  ModelArtifact,
+  ModelDownload,
+  ModelList,
   PASSWORD_CHANGE_REQUIRED,
   SubmitJobPayload,
   TokenResponse,
@@ -224,6 +227,22 @@ export const api = {
 
   getQuota(): Promise<MeQuota> {
     return request<MeQuota>("/api/v1/me/quota");
+  },
+
+  listModels(limit = 50, offset = 0): Promise<ModelList> {
+    return request<ModelList>(`/api/v1/models?limit=${limit}&offset=${offset}`);
+  },
+
+  getModel(id: string): Promise<ModelArtifact> {
+    return request<ModelArtifact>(`/api/v1/models/${id}`);
+  },
+
+  downloadModel(id: string): Promise<ModelDownload> {
+    return request<ModelDownload>(`/api/v1/models/${id}/download`);
+  },
+
+  deleteModel(id: string): Promise<void> {
+    return request<void>(`/api/v1/models/${id}`, { method: "DELETE" });
   },
 };
 

@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 const NAV = [
   { href: "/jobs", label: "Jobs" },
   { href: "/jobs/new", label: "New Job" },
+  { href: "/models", label: "Models" },
   { href: "/keys", label: "API Keys" },
   { href: "/quota", label: "Quota" },
 ] as const;

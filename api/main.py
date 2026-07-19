@@ -14,7 +14,7 @@ from api.config import settings
 from api.middleware import rate_limit_middleware
 from api.quotas import QuotaExceededError
 from api.rate_limit import register_script
-from api.routers import admin, auth, job_logs, jobs, keys, quotas, scope_probe
+from api.routers import admin, auth, job_logs, jobs, keys, models, quotas, scope_probe
 
 
 @asynccontextmanager
@@ -75,4 +75,5 @@ app.include_router(quotas.admin_quota_router, prefix="/api/v1")
 app.include_router(quotas.me_router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(job_logs.router, prefix="/api/v1")
+app.include_router(models.router, prefix="/api/v1")
 app.include_router(scope_probe.router, prefix="/api/v1")

@@ -60,6 +60,8 @@ async def finalize_job(
     exit_code: int | None,
     error_message: str | None,
     log_tail: str,
+    mlflow_run_id: str | None = None,
+    artifact_error: str | None = None,
 ) -> None:
     async with database.SessionLocal() as session:
         job = await session.get(Job, job_id)
@@ -70,6 +72,10 @@ async def finalize_job(
         job.exit_code = exit_code
         job.error_message = error_message
         job.finished_at = datetime.now(UTC)
+        if mlflow_run_id is not None:
+            job.mlflow_run_id = mlflow_run_id
+        if artifact_error is not None:
+            job.artifact_error = artifact_error
 
         if log_tail:
             session.add(JobLog(job_id=job.id, content=log_tail))

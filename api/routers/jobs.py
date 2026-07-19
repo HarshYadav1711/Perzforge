@@ -38,6 +38,8 @@ class JobResponse(BaseModel):
     worker_id: str | None
     exit_code: int | None
     error_message: str | None
+    mlflow_run_id: str | None = None
+    artifact_error: str | None = None
 
 
 class JobListResponse(BaseModel):
@@ -59,6 +61,8 @@ def _to_job_response(job: Job) -> JobResponse:
         worker_id=job.worker_id,
         exit_code=job.exit_code,
         error_message=job.error_message,
+        mlflow_run_id=job.mlflow_run_id,
+        artifact_error=job.artifact_error,
     )
 
 

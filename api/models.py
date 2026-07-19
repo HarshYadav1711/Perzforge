@@ -5,12 +5,24 @@ A3 adds: ApiKey
 B1 adds: Job
 B3 adds: JobLog
 E1 adds: Quota
+B4 adds: Model; Job.mlflow_run_id / artifact_error
 """
 import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +61,9 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     jobs: Mapped[list["Job"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    models: Mapped[list["Model"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     quota: Mapped["Quota | None"] = relationship(
         back_populates="user", cascade="all, delete-orphan", uselist=False
     )
@@ -87,9 +102,12 @@ class Job(Base):
     worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    mlflow_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    artifact_error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="jobs")
     logs: Mapped[list["JobLog"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+    models: Mapped[list["Model"]] = relationship(back_populates="source_job")
 
 
 class JobLog(Base):
@@ -171,3 +189,31 @@ class Quota(Base):
     max_llm_tokens_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
 
     user: Mapped[User] = relationship(back_populates="quota")
+
+
+class Model(Base):
+    __tablename__ = "models"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", "version", name="uq_models_user_name_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    minio_prefix: Mapped[str] = mapped_column(String(512), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    framework: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="models")
+    source_job: Mapped[Job | None] = relationship(back_populates="models")
