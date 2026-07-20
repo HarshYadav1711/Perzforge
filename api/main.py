@@ -4,17 +4,22 @@ Run: uvicorn api.main:app --reload
 """
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 
+import api.database as database
 import api.queue as queue
 from api.config import settings
 from api.middleware import rate_limit_middleware
 from api.quotas import QuotaExceededError
 from api.rate_limit import register_script
-from api.routers import admin, auth, job_logs, jobs, keys, models, quotas, scope_probe
+from api.routers import admin, auth, endpoints, job_logs, jobs, keys, models, quotas, scope_probe
+from api.serving import reconcile_vanished_containers
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -28,6 +33,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         owned_redis = True
     if not getattr(app.state, "rate_limit_script_sha", None):
         app.state.rate_limit_script_sha = await register_script(redis)
+
+    # Reconcile endpoints whose containers disappeared while the API was down.
+    if settings.serving_reconcile_on_startup:
+        try:
+            async with database.SessionLocal() as session:
+                marked = await reconcile_vanished_containers(session)
+                if marked:
+                    logger.warning("reconciled %s vanished endpoint container(s)", marked)
+        except Exception:  # noqa: BLE001 — startup must not die on reconcile failure
+            logger.exception("endpoint reconciliation failed")
+
     try:
         yield
     finally:
@@ -76,4 +92,5 @@ app.include_router(quotas.me_router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(job_logs.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
+app.include_router(endpoints.router, prefix="/api/v1")
 app.include_router(scope_probe.router, prefix="/api/v1")

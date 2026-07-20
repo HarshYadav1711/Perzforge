@@ -19,7 +19,7 @@ from api.rate_limit import register_script
 from api.security import hash_password
 
 _TRUNCATE_SQL = (
-    "TRUNCATE models, job_logs, jobs, api_keys, refresh_tokens, quotas, users "
+    "TRUNCATE usage_logs, endpoints, models, job_logs, jobs, api_keys, refresh_tokens, quotas, users "
     "RESTART IDENTITY CASCADE"
 )
 
@@ -33,7 +33,7 @@ async def configure_test_database() -> AsyncGenerator[None, None]:
 
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # create_all does not ALTER existing tables — ensure B4 columns exist
+        # create_all does not ALTER existing tables — ensure later-story columns exist
         await conn.execute(
             text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS mlflow_run_id VARCHAR(64)")
         )
@@ -42,23 +42,44 @@ async def configure_test_database() -> AsyncGenerator[None, None]:
                 "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS artifact_error VARCHAR(1024)"
             )
         )
+        await conn.execute(
+            text(
+                "ALTER TABLE quotas ADD COLUMN IF NOT EXISTS max_live_endpoints "
+                "INTEGER NOT NULL DEFAULT 1"
+            )
+        )
     yield
     await test_engine.dispose()
 
 
 @pytest.fixture(autouse=True)
 async def clean_auth_tables() -> AsyncGenerator[None, None]:
-    # AUTOCOMMIT so TRUNCATE is visible immediately to subsequent fixture inserts,
-    # even if a previous request left an aborted transaction on another connection.
-    async with database.engine.connect() as conn:
-        await conn.execution_options(isolation_level="AUTOCOMMIT")
-        await conn.execute(text(_TRUNCATE_SQL))
+    # begin() commits on clean exit so TRUNCATE is visible to subsequent fixtures.
+    # Retry rare deadlocks against leftover request sessions from the prior test.
+    import asyncio
+
+    last_exc: Exception | None = None
+    for attempt in range(5):
+        try:
+            async with database.engine.begin() as conn:
+                await conn.execute(text(_TRUNCATE_SQL))
+            break
+        except Exception as exc:  # noqa: BLE001 — narrow to deadlock then re-raise
+            last_exc = exc
+            if "deadlock" not in str(exc).lower():
+                raise
+            await asyncio.sleep(0.25 * (attempt + 1))
+    else:
+        assert last_exc is not None
+        raise last_exc
     yield
 
 
 @pytest.fixture(autouse=True)
 def generous_rate_limits(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep production-like limits only in E2 tests; elsewhere avoid cross-test 429 noise."""
+    # Avoid Docker.from_env hangs when the daemon is unavailable during API lifespan.
+    monkeypatch.setattr(settings, "serving_reconcile_on_startup", False)
     if request.node.path.name == "test_rate_limit.py":
         return
     monkeypatch.setattr(settings, "rate_limit_default_per_min", 10_000)
@@ -116,14 +137,17 @@ async def test_user(clean_auth_tables: None) -> User:
             must_change_password=False,
         )
         session.add(user)
-        await session.flush()
         await session.commit()
-        await session.refresh(user)
-        return user
+        loaded = await session.get(User, user.id)
+        assert loaded is not None, "test_user insert did not persist"
+        return loaded
 
 
 @pytest.fixture
-async def other_user(clean_auth_tables: None) -> User:
+async def other_user(test_user: User) -> User:
+    # Depend on test_user so user fixtures are not set up concurrently with each other
+    # (pytest-asyncio may otherwise race inserts against a fresh truncate).
+    _ = test_user
     async with database.SessionLocal() as session:
         user = User(
             email="other@example.com",
@@ -132,10 +156,10 @@ async def other_user(clean_auth_tables: None) -> User:
             must_change_password=False,
         )
         session.add(user)
-        await session.flush()
         await session.commit()
-        await session.refresh(user)
-        return user
+        loaded = await session.get(User, user.id)
+        assert loaded is not None, "other_user insert did not persist"
+        return loaded
 
 
 @pytest.fixture
@@ -148,10 +172,10 @@ async def admin_user(clean_auth_tables: None) -> User:
             must_change_password=False,
         )
         session.add(user)
-        await session.flush()
         await session.commit()
-        await session.refresh(user)
-        return user
+        loaded = await session.get(User, user.id)
+        assert loaded is not None, "admin_user insert did not persist"
+        return loaded
 
 
 def auth_header(token: str) -> dict[str, str]:

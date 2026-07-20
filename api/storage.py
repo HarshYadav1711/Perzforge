@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import uuid
 from functools import lru_cache
+from pathlib import Path
 from typing import BinaryIO
 
 import boto3
@@ -117,6 +118,24 @@ class ObjectStorage:
             )
             deleted += len(chunk)
         return deleted
+
+    def prefix_has_file(self, prefix: str, relative_name: str) -> bool:
+        key = f"{prefix}{relative_name}" if prefix.endswith("/") else f"{prefix}/{relative_name}"
+        return self.object_exists(key)
+
+    def download_prefix(self, prefix: str, dest: Path) -> int:
+        """Download all objects under prefix into dest. Returns file count."""
+        dest.mkdir(parents=True, exist_ok=True)
+        files = self.list_files(prefix)
+        for item in files:
+            relative = Path(str(item["key"]))
+            # Reject path traversal outside dest
+            target = (dest / relative).resolve()
+            if not str(target).startswith(str(dest.resolve())):
+                raise ValueError(f"refusing path outside destination: {item['key']}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(self.get_bytes(str(item["full_key"])))
+        return len(files)
 
 
 @lru_cache(maxsize=1)

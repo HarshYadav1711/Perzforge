@@ -6,6 +6,7 @@ B1 adds: Job
 B3 adds: JobLog
 E1 adds: Quota
 B4 adds: Model; Job.mlflow_run_id / artifact_error
+C1 adds: Endpoint, UsageLog; Quota.max_live_endpoints
 """
 import enum
 import uuid
@@ -62,6 +63,9 @@ class User(Base):
     )
     jobs: Mapped[list["Job"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     models: Mapped[list["Model"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    endpoints: Mapped[list["Endpoint"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
     quota: Mapped["Quota | None"] = relationship(
@@ -187,6 +191,7 @@ class Quota(Base):
     max_storage_mb: Mapped[int] = mapped_column(Integer, nullable=False)
     max_instances: Mapped[int] = mapped_column(Integer, nullable=False)
     max_llm_tokens_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_live_endpoints: Mapped[int] = mapped_column(Integer, nullable=False)
 
     user: Mapped[User] = relationship(back_populates="quota")
 
@@ -217,3 +222,71 @@ class Model(Base):
 
     user: Mapped[User] = relationship(back_populates="models")
     source_job: Mapped[Job | None] = relationship(back_populates="models")
+    endpoints: Mapped[list["Endpoint"]] = relationship(back_populates="model")
+
+
+class EndpointStatus(str, enum.Enum):
+    STARTING = "STARTING"
+    LIVE = "LIVE"
+    STOPPED = "STOPPED"
+    FAILED = "FAILED"
+
+
+class Endpoint(Base):
+    __tablename__ = "endpoints"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    model_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("models.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[EndpointStatus] = mapped_column(
+        Enum(EndpointStatus, name="endpoint_status", native_enum=False, length=16),
+        nullable=False,
+        default=EndpointStatus.STARTING,
+    )
+    container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    route: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="endpoints")
+    model: Mapped[Model] = relationship(back_populates="endpoints")
+    usage_logs: Mapped[list["UsageLog"]] = relationship(
+        back_populates="endpoint", cascade="all, delete-orphan"
+    )
+
+
+class UsageLog(Base):
+    """Request metering for model endpoints (C1). LLM-shaped fields extended in C3."""
+
+    __tablename__ = "usage_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    api_key_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    endpoint_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("endpoints.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    endpoint: Mapped[Endpoint] = relationship(back_populates="usage_logs")

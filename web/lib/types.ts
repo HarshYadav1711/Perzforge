@@ -1,4 +1,4 @@
-/** Types mirroring FastAPI response shapes (stories A2/A3/B1/E1). */
+/** Types mirroring FastAPI response shapes (stories A2/A3/B1/E1/B4/C1). */
 
 export type JobStatus =
   | "QUEUED"
@@ -7,6 +7,8 @@ export type JobStatus =
   | "SUCCEEDED"
   | "FAILED"
   | "CANCELLED";
+
+export type EndpointStatus = "STARTING" | "LIVE" | "STOPPED" | "FAILED";
 
 export interface JobSpec {
   image: string;
@@ -89,6 +91,7 @@ export interface MeQuota {
     max_storage_mb: number;
     max_instances: number;
     max_llm_tokens_per_day: number;
+    max_live_endpoints: number;
   };
   usage: Record<string, QuotaUsageEntry>;
 }
@@ -120,6 +123,25 @@ export interface ModelDownloadFile {
 export interface ModelDownload {
   files: ModelDownloadFile[];
   expires_in: number;
+}
+
+export interface Endpoint {
+  id: string;
+  model_id: string;
+  name: string;
+  status: EndpointStatus;
+  route: string;
+  container_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  stopped_at: string | null;
+}
+
+export interface EndpointList {
+  items: Endpoint[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export const ALLOWED_IMAGES = [

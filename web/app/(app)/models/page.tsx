@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
@@ -17,6 +18,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function ModelsPage() {
+  const router = useRouter();
   const [models, setModels] = useState<ModelArtifact[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,23 @@ export default function ModelsPage() {
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Download failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deploy(model: ModelArtifact) {
+    setBusyId(model.id);
+    try {
+      const endpoint = await api.deployModel(model.id);
+      setError(null);
+      if (endpoint.status === "FAILED") {
+        setError(endpoint.error_message ?? "Deploy failed");
+        return;
+      }
+      router.push("/endpoints");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Deploy failed");
     } finally {
       setBusyId(null);
     }
@@ -126,6 +145,14 @@ export default function ModelsPage() {
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void deploy(model)}
+                        disabled={busyId === model.id}
+                        className="rounded border border-[var(--accent)] px-2 py-1 text-xs text-[var(--accent)] disabled:opacity-50"
+                      >
+                        Deploy
+                      </button>
                       <button
                         type="button"
                         onClick={() => void download(model)}

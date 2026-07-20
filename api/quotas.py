@@ -1,4 +1,4 @@
-"""Centralized quota enforcement (story E1)."""
+"""Centralized quota enforcement (story E1 / C1)."""
 import enum
 import uuid
 from datetime import UTC, datetime
@@ -8,9 +8,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.config import settings
-from api.models import Job, JobStatus, Quota, User
+from api.models import Endpoint, EndpointStatus, Job, JobStatus, Quota, User
 
 ACTIVE_JOB_STATUSES = (JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.CANCELLING)
+ACTIVE_ENDPOINT_STATUSES = (EndpointStatus.STARTING, EndpointStatus.LIVE)
 QUOTA_COUNTER_TTL_SECONDS = settings.quota_counter_ttl_seconds
 
 
@@ -20,6 +21,7 @@ class QuotaResource(str, enum.Enum):
     STORAGE_MB = "storage_mb"
     INSTANCES = "instances"
     LLM_TOKENS_PER_DAY = "llm_tokens_per_day"
+    LIVE_ENDPOINTS = "live_endpoints"
 
 
 QUOTA_LIMIT_NAMES: dict[QuotaResource, str] = {
@@ -28,6 +30,7 @@ QUOTA_LIMIT_NAMES: dict[QuotaResource, str] = {
     QuotaResource.STORAGE_MB: "max_storage_mb",
     QuotaResource.INSTANCES: "max_instances",
     QuotaResource.LLM_TOKENS_PER_DAY: "max_llm_tokens_per_day",
+    QuotaResource.LIVE_ENDPOINTS: "max_live_endpoints",
 }
 
 DAILY_REDIS_RESOURCES = frozenset(
@@ -76,6 +79,7 @@ def default_quota_values() -> dict[str, int]:
         "max_storage_mb": settings.max_storage_mb_per_user,
         "max_instances": settings.max_instances_per_user,
         "max_llm_tokens_per_day": settings.max_llm_tokens_per_day_per_user,
+        "max_live_endpoints": settings.max_live_endpoints_per_user,
     }
 
 
@@ -106,6 +110,15 @@ async def _count_concurrent_jobs(db: AsyncSession, user_id: uuid.UUID) -> int:
     return int(result.scalar_one())
 
 
+async def _count_live_endpoints(db: AsyncSession, user_id: uuid.UUID) -> int:
+    result = await db.execute(
+        select(func.count())
+        .select_from(Endpoint)
+        .where(Endpoint.user_id == user_id, Endpoint.status.in_(ACTIVE_ENDPOINT_STATUSES))
+    )
+    return int(result.scalar_one())
+
+
 async def _read_redis_counter(redis: Redis, key: str) -> int:
     raw = await redis.get(key)
     if raw is None:
@@ -121,6 +134,8 @@ async def current_usage(
 ) -> int:
     if resource == QuotaResource.CONCURRENT_JOBS:
         return await _count_concurrent_jobs(db, user.id)
+    if resource == QuotaResource.LIVE_ENDPOINTS:
+        return await _count_live_endpoints(db, user.id)
     return await _read_redis_counter(redis, quota_counter_key(user.id, resource))
 
 

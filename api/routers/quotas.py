@@ -23,6 +23,7 @@ class QuotaLimitsResponse(BaseModel):
     max_storage_mb: int
     max_instances: int
     max_llm_tokens_per_day: int
+    max_live_endpoints: int
 
 
 class QuotaUsageEntry(BaseModel):
@@ -43,6 +44,7 @@ class PatchQuotaRequest(BaseModel):
     max_storage_mb: int | None = Field(default=None, ge=0)
     max_instances: int | None = Field(default=None, ge=0)
     max_llm_tokens_per_day: int | None = Field(default=None, ge=0)
+    max_live_endpoints: int | None = Field(default=None, ge=0)
 
 
 def _limits_response(quota: Quota) -> QuotaLimitsResponse:
@@ -52,6 +54,7 @@ def _limits_response(quota: Quota) -> QuotaLimitsResponse:
         max_storage_mb=quota.max_storage_mb,
         max_instances=quota.max_instances,
         max_llm_tokens_per_day=quota.max_llm_tokens_per_day,
+        max_live_endpoints=quota.max_live_endpoints,
     )
 
 

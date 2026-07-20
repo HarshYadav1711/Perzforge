@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     max_storage_mb_per_user: int = 2048
     max_instances_per_user: int = 1
     max_llm_tokens_per_day_per_user: int = 50000
+    max_live_endpoints_per_user: int = 1
     quota_counter_ttl_seconds: int = 48 * 60 * 60
     job_queue_key: str = "perzforge:jobs:queue"
     worker_lock_key: str = "perzforge:worker:lock"
@@ -46,6 +47,14 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str = "http://127.0.0.1:5000"
     # Docker network for job containers (empty = network_mode none; set to reach MLflow)
     docker_job_network: str = ""
+    # Model serving (story C1)
+    serve_runner_image: str = "perzforge/serve-runner:latest"
+    serving_network_name: str = "perzforge-serving"
+    serving_artifact_root: str = "/var/lib/perzforge/endpoints"
+    serving_health_timeout_seconds: int = 60
+    serving_predict_timeout_seconds: float = 30.0
+    serving_container_port: int = 8000
+    serving_reconcile_on_startup: bool = True
 
     def image_prefixes(self) -> tuple[str, ...]:
         return tuple(prefix.strip() for prefix in self.allowed_image_prefixes.split(",") if prefix.strip())

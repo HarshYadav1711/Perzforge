@@ -153,6 +153,7 @@ async def test_quota_exceeded_skips_model_and_surfaces_error(
                 max_storage_mb=1,
                 max_instances=1,
                 max_llm_tokens_per_day=50000,
+                max_live_endpoints=1,
             )
         )
         await session.commit()

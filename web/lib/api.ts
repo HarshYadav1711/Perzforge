@@ -2,6 +2,8 @@ import {
   ApiKey,
   ApiKeyCreated,
   CreateApiKeyPayload,
+  Endpoint,
+  EndpointList,
   Job,
   JobList,
   MeQuota,
@@ -243,6 +245,28 @@ export const api = {
 
   deleteModel(id: string): Promise<void> {
     return request<void>(`/api/v1/models/${id}`, { method: "DELETE" });
+  },
+
+  deployModel(id: string, name?: string): Promise<Endpoint> {
+    return request<Endpoint>(`/api/v1/models/${id}/deploy`, {
+      method: "POST",
+      body: JSON.stringify(name ? { name } : {}),
+    });
+  },
+
+  listEndpoints(limit = 50, offset = 0): Promise<EndpointList> {
+    return request<EndpointList>(`/api/v1/endpoints?limit=${limit}&offset=${offset}`);
+  },
+
+  stopEndpoint(id: string): Promise<Endpoint> {
+    return request<Endpoint>(`/api/v1/endpoints/${id}/stop`, { method: "POST" });
+  },
+
+  predictEndpoint(route: string, payload: Record<string, unknown>): Promise<unknown> {
+    return request<unknown>(`/api/v1/endpoints/${encodeURIComponent(route)}/predict`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 };
 
